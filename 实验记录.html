@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-    <link rel="manifest" href="manifest.json">
+    <link rel="manifest" href="/my-vault/manifest.json">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>科研Vault - 本地文件增强版</title>
@@ -176,11 +176,9 @@
 
     <script>
 if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./sw.js')
-            .then(reg => console.log('SW 注册成功!', reg))
-            .catch(err => console.error('SW 注册失败:', err));
-    });
+    navigator.serviceWorker.register('/my-vault/sw.js')
+        .then(reg => console.log('SW 注册成功'))
+        .catch(err => console.log('SW 注册失败', err));
 }
         let fileHandle = null;
         let masterPwd = "";
