@@ -1,0 +1,16 @@
+{
+  "name": "科研笔记 Vault",
+  "short_name": "科研Vault",
+  "description": "本地增强版科研实验记录系统",
+  "start_url": "实验记录.html",
+  "display": "standalone",
+  "background_color": "#1e293b",
+  "theme_color": "#6366f1",
+  "icons": [
+    {
+      "src": "icon.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

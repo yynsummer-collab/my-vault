@@ -1,0 +1,1101 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <link rel="manifest" href="manifest.json">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>科研Vault - 本地文件增强版</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        /* 严格保持原始样式 */
+        body { background-color: #f8fafc; font-family: system-ui, sans-serif; overflow: hidden; font-size: 14px; }
+        .sidebar { width: 220px; background: #ffffff; border-right: 1px solid #e2e8f0; display: flex; flex-direction: column; height: 100vh; }
+        .detail-row { border: 1px solid #e2e8f0; border-radius: 4px; background: #fff; margin-bottom: 6px; overflow: hidden; transition: all 0.25s ease; }
+        .status-focused { border: 2px solid #6366f1 !important; box-shadow: 0 0 15px rgba(99, 102, 241, 0.25); transform: translateX(2px); }
+        .detail-header { height: 36px; display: flex; align-items: center; padding-right: 8px; border-bottom: 1px solid transparent; }
+        .expanded .detail-header { border-bottom: 1px solid #f1f5f9; background: #fafafa; }
+        .type-table { border-left: 4px solid #0d9488; }
+        .type-note { border-left: 4px solid #6366f1; }
+        .detail-body { max-height: 0; overflow: hidden; transition: max-height 0.4s cubic-bezier(0, 1, 0, 1); }
+        .expanded .detail-body { max-height: 5000px; }
+        .flex-container { display: flex; min-height: 160px; gap: 6px; }
+        .editor-side { flex: 1; }
+        .editor-side textarea { width: 100%; height: 100%; min-height: 140px; padding: 8px; font-size: 13px; border: 1px solid #e2e8f0; border-radius: 3px; outline: none; line-height: 1.5; background: #fff; }
+        .tracker-side { width: 180px; padding: 6px; background: #f8fafc; border-radius: 3px; border: 1px solid #e2e8f0; display: flex; flex-direction: column; gap: 4px; flex-shrink: 0; }
+        .tracer-item { display: flex; align-items: center; gap: 4px; background: white; border: 1px solid #eef2ff; padding: 2px 6px; border-radius: 2px; border-left: 2px solid #f97316; font-size: 10px; }
+        .data-table { border-collapse: collapse; table-layout: fixed; min-width: 100%; font-size: 13px; border: 1px solid #cbd5e1; }
+        .data-table th { background: #f1f5f9; border: 1px solid #cbd5e1; padding: 4px; font-weight: 800; color: #475569; }
+        .data-table td { border: 1px solid #cbd5e1; padding: 0; min-width: 90px; text-align: center; height: 28px; position: relative; }
+        .row-test-date { background: #fdfdfd !important; height: auto !important; }
+        .row-test-date td { font-size: 11px; color: #cbd5e1; padding: 2px 0; }
+        .cell-date-picker { font-size: 12px; width: 100%; border: none; background: transparent; text-align: center; color: #6366f1; cursor: pointer; outline: none; }
+        .note-link-container { position: relative; display: flex; flex-direction: column; align-items: center; padding: 2px; }
+        .cell-note-selector { 
+            position: absolute; left: 2px; bottom: 2px; width: 16px; height: 16px; 
+            opacity: 0.1; cursor: pointer; z-index: 10;
+        }
+        .cell-note-selector:hover { opacity: 0.8; }
+        .note-icon-overlay { 
+            position: absolute; left: 4px; bottom: 4px; pointer-events: none;
+            color: #6366f1; opacity: 0.4;
+        }
+        .note-header-date { font-size: 13px; color: #6366f1; background: #eef2ff; border: 1px solid #e0e7ff; border-radius: 3px; padding: 0 6px; font-weight: bold; }
+        .btn-op { padding: 1px 6px; font-size: 11px; border-radius: 3px; background: #fff; border: 1px solid #cbd5e1; transition: all 0.2s; color: #64748b; }
+        .btn-op:hover { border-color: #6366f1; color: #6366f1; }
+        .sub-section-container { margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
+        .sub-item { border: 1px solid #e2e8f0; border-radius: 4px; overflow: hidden; background: #fcfcfc; }
+        .sub-highlight { border: 2px solid #f59e0b !important; background: #fffbeb !important; }
+        .sub-header-edit { display: flex; align-items: center; gap: 6px; padding: 6px 8px; background: #f1f5f9; cursor: pointer; }
+        .sub-content-area { display: none; padding: 10px; background: #fff; border-top: 1px solid #e2e8f0; }
+        .sub-expanded .sub-content-area { display: flex; } 
+        .sub-expanded .sub-icon { transform: rotate(90deg); }
+        .sub-icon { transition: transform 0.2s; }
+        .editable-group-name, .editable-folder-name { padding: 0 2px; border-radius: 2px; min-width: 20px; outline: none; transition: background 0.2s; display: inline-block; cursor: pointer; }
+        .editable-group-name:focus, .editable-folder-name:focus { background: #fff; border: 1px solid #6366f1; color: #334155; box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.1); cursor: text; }
+        .group-container:hover .group-ops { opacity: 1; }
+        .folder-item:hover .folder-ops { opacity: 1; }
+        .icon-btn-trigger { cursor: pointer; display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; margin-right: -4px; }
+        .icon-btn-trigger:hover { background: rgba(0,0,0,0.05); border-radius: 4px; }
+        .arrow-btn { font-size: 16px; line-height: 1; padding: 0 4px; transition: color 0.2s; }
+        .arrow-btn:hover { color: #6366f1; }
+        #toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #334155; color: white; padding: 8px 16px; border-radius: 20px; font-size: 12px; transition: all 0.3s; z-index: 200; opacity: 0; pointer-events: none; }
+        #toast.show { opacity: 1; bottom: 40px; }
+        
+        /* 新增：密保重置和设置相关样式 */
+        .security-modal { 
+            position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 1000; 
+            display: flex; align-items: center; justify-content: center; 
+        }
+        .security-box { 
+            background: #1e293b; border-radius: 12px; padding: 24px; width: 380px; 
+            max-width: 90vw; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5); 
+        }
+        .security-header { 
+            font-size: 14px; font-weight: bold; text-transform: uppercase; 
+            letter-spacing: 1px; color: #cbd5e1; margin-bottom: 16px; 
+            border-bottom: 1px solid #334155; padding-bottom: 8px; 
+        }
+        .security-input { 
+            width: 100%; padding: 10px 12px; background: #0f172a; border: 1px solid #334155; 
+            border-radius: 6px; color: white; margin-bottom: 12px; font-size: 13px; 
+            outline: none; transition: border-color 0.2s; 
+        }
+        .security-input:focus { border-color: #6366f1; }
+        .security-btn { 
+            width: 100%; padding: 10px; background: #6366f1; color: white; 
+            border-radius: 6px; font-weight: bold; font-size: 13px; 
+            text-transform: uppercase; letter-spacing: 0.5px; transition: background 0.2s; 
+        }
+        .security-btn:hover { background: #4f46e5; }
+        .security-btn.secondary { 
+            background: transparent; border: 1px solid #475569; color: #cbd5e1; 
+            margin-top: 8px; 
+        }
+        .security-btn.secondary:hover { background: rgba(255,255,255,0.05); }
+        .security-message { 
+            font-size: 12px; padding: 8px; border-radius: 4px; margin-bottom: 12px; 
+            text-align: center; 
+        }
+        .security-message.success { background: rgba(34, 197, 94, 0.1); color: #4ade80; }
+        .security-message.error { background: rgba(239, 68, 68, 0.1); color: #f87171; }
+        .security-message.info { background: rgba(59, 130, 246, 0.1); color: #60a5fa; }
+    </style>
+</head>
+<body class="flex h-screen">
+
+    <div id="auth-screen" class="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900">
+        <div class="bg-slate-800 p-8 rounded-xl shadow-2xl w-80 text-center">
+            <h2 class="text-white text-base font-bold mb-4 tracking-widest">科研笔记 Vault</h2>
+            <div id="file-link-section" class="space-y-3">
+                <button onclick="requestFileSystemAccess('existing')" class="w-full bg-indigo-600 text-white py-3 rounded font-bold text-xs uppercase tracking-widest hover:bg-indigo-500 transition-colors">关联本地数据文件</button>
+                <button onclick="requestFileSystemAccess('new')" class="w-full border border-slate-600 text-slate-400 py-3 rounded font-bold text-xs uppercase tracking-widest hover:border-indigo-500 hover:text-white transition-all">创建新本地库</button>
+            </div>
+            <div id="unlock-section" class="hidden">
+                <p class="text-indigo-400 text-[10px] mb-4 uppercase font-bold tracking-widest" id="unlock-title">输入密码解锁</p>
+                <input type="password" id="master-password" placeholder="访问密码" onkeydown="if(event.key==='Enter') handleUnlock()" class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded text-center mb-4 text-sm text-white outline-none">
+                <button onclick="handleUnlock()" class="w-full bg-indigo-600 text-white py-2 rounded font-bold text-sm uppercase tracking-widest hover:bg-indigo-500" id="unlock-button">解锁 Vault</button>
+                <div class="mt-4 space-y-2">
+                    <button onclick="showForgotPasswordModal()" class="text-[10px] text-slate-400 hover:text-indigo-400 transition-colors">忘记密码？使用密保重置</button>
+                    <button onclick="forgetFile()" class="block text-[10px] text-slate-500 hover:underline">更换关联文件</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 密保重置模态框 -->
+    <div id="security-reset-modal" class="security-modal hidden">
+        <div class="security-box">
+            <div class="security-header">密保密码重置</div>
+            <div id="security-message" class="security-message info">请输入密保日期以重置密码</div>
+            <input type="date" id="security-date-input" class="security-input" placeholder="密保日期 (YYYY-MM-DD)">
+            <input type="password" id="new-password-input" class="security-input hidden" placeholder="新密码">
+            <input type="password" id="confirm-password-input" class="security-input hidden" placeholder="确认新密码">
+            <button id="security-action-btn" onclick="handleSecurityAction()" class="security-btn">验证密保</button>
+            <button onclick="hideSecurityResetModal()" class="security-btn secondary">取消</button>
+        </div>
+    </div>
+
+    <!-- 密保设置模态框 -->
+    <div id="security-settings-modal" class="security-modal hidden">
+        <div class="security-box">
+            <div class="security-header">密保设置</div>
+            <div id="settings-message" class="security-message info">当前密保日期：<span id="current-security-date"></span></div>
+            <input type="password" id="current-password-input" class="security-input" placeholder="当前密码">
+            <input type="date" id="new-security-date-input" class="security-input" placeholder="新密保日期">
+            <button onclick="updateSecurityDate()" class="security-btn">更新密保</button>
+            <button onclick="hideSecuritySettingsModal()" class="security-btn secondary">关闭</button>
+        </div>
+    </div>
+
+    <aside class="sidebar">
+        <div class="p-4 border-b flex justify-between items-center bg-slate-50">
+            <span class="font-black text-slate-400 uppercase tracking-tighter sidebar-group-title">科研笔记系统</span>
+            <div class="flex items-center gap-2">
+                <button onclick="showSecuritySettingsModal()" title="密保设置"><i data-lucide="shield" class="w-5 h-5 text-slate-300 hover:text-indigo-500"></i></button>
+                <button onclick="addGroup()" title="添加分组"><i data-lucide="plus-circle" class="w-5 h-5 text-slate-300"></i></button>
+            </div>
+        </div>
+        <div id="folder-list" class="flex-1 overflow-y-auto p-3"></div>
+    </aside>
+
+    <main class="flex-1 flex flex-col overflow-hidden">
+        <header class="h-12 bg-white border-b px-4 flex items-center justify-between z-10">
+            <div id="current-folder-path" class="text-slate-400 text-[10px] font-black uppercase tracking-widest">当前存储区</div>
+            <div class="flex gap-3">
+                <button onclick="createNewItem('note')" class="bg-indigo-600 text-white px-4 py-1.5 rounded text-[12px] font-bold">新实验笔记</button>
+                <button onclick="createNewItem('table')" class="bg-teal-600 text-white px-4 py-1.5 rounded text-[12px] font-bold">新数据记录</button>
+                <button onclick="location.reload()" class="p-1.5 text-slate-300 hover:text-red-500" title="退出并锁定"><i data-lucide="log-out" class="w-4 h-4"></i></button>
+            </div>
+        </header>
+        <div id="detail-list" class="flex-1 overflow-y-auto p-4"></div>
+    </main>
+
+    <div id="toast">提示信息</div>
+
+    <script>
+        // 注册 PWA 服务
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js');
+    });
+}
+        let fileHandle = null;
+        let masterPwd = "";
+        let decryptedData = [];
+        let folders = [];
+        let groups = [{id: 'g_1', name: '核心项目', expanded: true}];
+        let securityDate = "";
+        let activeFolderId = '';
+        let expandedIds = new Set();
+        let focusedId = null; 
+        const DB_NAME = 'Vault_File_Config';
+        const KEY_HANDLE = 'last_file_handle';
+        // 新增：数据密钥（用于实际加密数据）
+        let dataKey = "";
+        // 新增：标志文件是否是新建的（需要首次设置密码）
+        let isNewFile = false;
+
+        async function setCfg(k, v) { return new Promise((r) => { const req = indexedDB.open(DB_NAME, 1); req.onupgradeneeded = e => e.target.result.createObjectStore('config'); req.onsuccess = e => { const store = e.target.result.transaction('config','readwrite').objectStore('config'); store.put(v, k).onsuccess = () => r(); }; }); }
+        async function getCfg(k) { return new Promise(r => { const req = indexedDB.open(DB_NAME, 1); req.onupgradeneeded = e => e.target.result.createObjectStore('config'); req.onsuccess = e => { const store = e.target.result.transaction('config','readonly').objectStore('config'); const getReq = store.get(k); getReq.onsuccess = () => r(getReq.result); getReq.onerror = () => r(null); }; }); }
+
+        window.onload = async () => { 
+            lucide.createIcons(); 
+            const savedHandle = await getCfg(KEY_HANDLE); 
+            if (savedHandle) { 
+                fileHandle = savedHandle; 
+                document.getElementById('file-link-section').classList.add('hidden'); 
+                document.getElementById('unlock-section').classList.remove('hidden'); 
+            } 
+        };
+
+        async function verifyPermission(handle) { 
+            const options = { mode: 'readwrite' }; 
+            if ((await handle.queryPermission(options)) === 'granted') return true; 
+            if ((await handle.requestPermission(options)) === 'granted') return true; 
+            return false; 
+        }
+
+        async function requestFileSystemAccess(mode) { 
+            try { 
+                if (mode === 'existing') {
+                    [fileHandle] = await window.showOpenFilePicker();
+                    isNewFile = false;
+                } else { 
+                    fileHandle = await window.showSaveFilePicker({ 
+                        suggestedName: 'my_research_vault.json' 
+                    });
+                    // 设置密保日期
+                    securityDate = prompt("设置密保日期（用于密码重置）：", new Date().toISOString().split('T')[0]) || "";
+                    if (!securityDate) {
+                        alert("必须设置密保日期！");
+                        return;
+                    }
+                    isNewFile = true;
+                    
+                    // 生成数据密钥（独立于主密码）
+                    dataKey = generateDataKey();
+                    
+                    // 对于新文件，我们创建一个空的加密文件（没有实际数据，只有结构）
+                    await saveNewFileStructure();
+                } 
+                await setCfg(KEY_HANDLE, fileHandle); 
+                location.reload(); 
+            } catch (e) {
+                console.error(e);
+            } 
+        }
+
+        // 保存新文件结构（不包含实际数据）
+        async function saveNewFileStructure() {
+            if (!fileHandle || !dataKey) return;
+            try {
+                // 创建空的数据结构
+                const emptyData = [];
+                const ciphertext = CryptoJS.AES.encrypt(JSON.stringify(emptyData), dataKey).toString();
+                
+                // 对于新文件，我们创建一个标记，表示需要设置主密码
+                const dataToSave = { 
+                    v: "3.0", // 新版本号，支持双密钥
+                    payload: ciphertext, 
+                    dataKey: null, // 新文件，数据密钥尚未加密
+                    folders: [], 
+                    groups: groups, 
+                    sd: securityDate,
+                    requiresPassword: false, // 新文件，还没有设置密码
+                    isNewFile: true // 标记为新文件
+                };
+                const writable = await fileHandle.createWritable();
+                await writable.write(JSON.stringify(dataToSave));
+                await writable.close();
+            } catch (e) { 
+                console.error("保存失败:", e);
+            } 
+        }
+
+        // 生成独立的数据密钥
+        function generateDataKey() {
+            return CryptoJS.lib.WordArray.random(32).toString();
+        }
+
+        // 保存文件（常规保存）
+        async function syncFile() { 
+            if (!fileHandle || !masterPwd || !dataKey) return;
+            try {
+                // 使用数据密钥加密实际数据
+                const ciphertext = CryptoJS.AES.encrypt(JSON.stringify(decryptedData), dataKey).toString();
+                // 使用主密码加密数据密钥
+                const encryptedDataKey = CryptoJS.AES.encrypt(dataKey, masterPwd).toString();
+                
+                const dataToSave = { 
+                    v: "3.0", 
+                    payload: ciphertext, 
+                    dataKey: encryptedDataKey,
+                    folders: folders, 
+                    groups: groups, 
+                    sd: securityDate,
+                    requiresPassword: true,
+                    isNewFile: false // 不再是新文件
+                };
+                const writable = await fileHandle.createWritable();
+                await writable.write(JSON.stringify(dataToSave));
+                await writable.close();
+            } catch (e) { 
+                showToast("保存失败");
+            } 
+        }
+
+        async function saveToLocal() { 
+            await syncFile(); 
+        }
+
+        function forgetFile() { 
+            if(confirm("更换关联文件？")) {
+                setCfg(KEY_HANDLE, null).then(() => location.reload()); 
+            }
+        }
+
+        async function handleUnlock() {
+            const pwdInput = document.getElementById('master-password');
+            const pwd = pwdInput.value;
+            
+            if (!pwd) {
+                alert("请输入密码");
+                return;
+            }
+            
+            try {
+                const hasPermission = await verifyPermission(fileHandle);
+                if (!hasPermission) return;
+                const file = await fileHandle.getFile();
+                const content = await file.text();
+                
+                if (!content || content.trim() === '') {
+                    // 空文件，直接设置主密码
+                    await handleFirstTimeSetup(pwd);
+                    return;
+                }
+                
+                const pkg = JSON.parse(content);
+                securityDate = pkg.sd || "";
+                
+                // 检查是否是新文件（首次使用）
+                if (pkg.isNewFile === true && pkg.requiresPassword === false) {
+                    // 新文件首次解锁，设置主密码
+                    await handleFirstTimeSetup(pwd, pkg);
+                    return;
+                }
+                
+                // 版本3.0：双密钥逻辑
+                if (pkg.v === "3.0" && pkg.dataKey) {
+                    try {
+                        // 使用主密码解密数据密钥
+                        const bytes = CryptoJS.AES.decrypt(pkg.dataKey, pwd);
+                        dataKey = bytes.toString(CryptoJS.enc.Utf8);
+                        
+                        // 使用数据密钥解密实际数据
+                        const dataBytes = CryptoJS.AES.decrypt(pkg.payload, dataKey);
+                        const decryptedStr = dataBytes.toString(CryptoJS.enc.Utf8);
+                        decryptedData = JSON.parse(decryptedStr);
+                        
+                        masterPwd = pwd;
+                    } catch (e) {
+                        throw new Error("密码错误");
+                    }
+                } else {
+                    // 旧版本：直接使用主密码解密
+                    const bytes = CryptoJS.AES.decrypt(pkg.payload, pwd);
+                    const decryptedStr = bytes.toString(CryptoJS.enc.Utf8);
+                    decryptedData = JSON.parse(decryptedStr);
+                    masterPwd = pwd;
+                    
+                    // 为旧数据生成数据密钥
+                    dataKey = generateDataKey();
+                }
+                
+                folders = pkg.folders || [];
+                groups = pkg.groups || groups;
+                
+                document.getElementById('auth-screen').classList.add('hidden');
+                renderFolders(); 
+                renderDetails();
+                showToast("解锁成功");
+                
+            } catch (e) { 
+                alert("密码错误"); 
+            }
+        }
+
+        // 处理首次设置密码（新文件）
+        async function handleFirstTimeSetup(password, existingPkg = null) {
+            try {
+                // 读取现有数据（如果有）
+                let existingData = [];
+                let existingFolders = [];
+                let existingGroups = groups;
+                
+                if (existingPkg) {
+                    // 尝试解密现有数据（新文件可能已经有空数据）
+                    if (existingPkg.payload) {
+                        // 新文件的数据可能用默认密钥加密
+                        try {
+                            // 新文件的数据是用dataKey加密的，但dataKey是null，所以实际上数据是空的
+                            // 我们直接创建空数据
+                            existingData = [];
+                        } catch (e) {
+                            // 如果解密失败，使用空数据
+                            existingData = [];
+                        }
+                    }
+                    existingFolders = existingPkg.folders || [];
+                    existingGroups = existingPkg.groups || groups;
+                    securityDate = existingPkg.sd || securityDate;
+                }
+                
+                // 设置主密码
+                masterPwd = password;
+                
+                // 如果没有数据密钥，生成一个新的
+                if (!dataKey) {
+                    dataKey = generateDataKey();
+                }
+                
+                // 用新数据密钥加密现有数据
+                const ciphertext = CryptoJS.AES.encrypt(JSON.stringify(existingData), dataKey).toString();
+                // 用主密码加密数据密钥
+                const encryptedDataKey = CryptoJS.AES.encrypt(dataKey, masterPwd).toString();
+                
+                const dataToSave = { 
+                    v: "3.0", 
+                    payload: ciphertext, 
+                    dataKey: encryptedDataKey,
+                    folders: existingFolders, 
+                    groups: existingGroups, 
+                    sd: securityDate,
+                    requiresPassword: true,
+                    isNewFile: false
+                };
+                
+                const writable = await fileHandle.createWritable();
+                await writable.write(JSON.stringify(dataToSave));
+                await writable.close();
+                
+                // 更新本地变量
+                decryptedData = existingData;
+                folders = existingFolders;
+                
+                document.getElementById('auth-screen').classList.add('hidden');
+                renderFolders(); 
+                renderDetails();
+                showToast("主密码设置成功！");
+                
+            } catch (e) {
+                console.error(e);
+                alert("设置密码失败：" + e.message);
+            }
+        }
+
+        // 密保重置功能
+        let securityResetState = 'verify'; // verify, setPassword, complete
+        
+        function showForgotPasswordModal() {
+            document.getElementById('security-reset-modal').classList.remove('hidden');
+            document.getElementById('security-date-input').classList.remove('hidden');
+            document.getElementById('new-password-input').classList.add('hidden');
+            document.getElementById('confirm-password-input').classList.add('hidden');
+            document.getElementById('security-action-btn').innerText = '验证密保';
+            document.getElementById('security-message').className = 'security-message info';
+            document.getElementById('security-message').innerText = '请输入密保日期以验证身份';
+            securityResetState = 'verify';
+        }
+        
+        function hideSecurityResetModal() {
+            document.getElementById('security-reset-modal').classList.add('hidden');
+            document.getElementById('security-date-input').value = '';
+            document.getElementById('new-password-input').value = '';
+            document.getElementById('confirm-password-input').value = '';
+        }
+        
+        async function handleSecurityAction() {
+            const securityDateInput = document.getElementById('security-date-input').value;
+            
+            if (securityResetState === 'verify') {
+                if (!securityDateInput) {
+                    document.getElementById('security-message').className = 'security-message error';
+                    document.getElementById('security-message').innerText = '请输入密保日期';
+                    return;
+                }
+                
+                try {
+                    const hasPermission = await verifyPermission(fileHandle);
+                    if (!hasPermission) {
+                        document.getElementById('security-message').className = 'security-message error';
+                        document.getElementById('security-message').innerText = '没有文件访问权限';
+                        return;
+                    }
+                    
+                    const file = await fileHandle.getFile();
+                    const content = await file.text();
+                    const pkg = JSON.parse(content);
+                    
+                    if (pkg.sd === securityDateInput) {
+                        // 验证成功
+                        document.getElementById('security-date-input').classList.add('hidden');
+                        document.getElementById('new-password-input').classList.remove('hidden');
+                        document.getElementById('confirm-password-input').classList.remove('hidden');
+                        document.getElementById('security-action-btn').innerText = '重置密码';
+                        document.getElementById('security-message').className = 'security-message success';
+                        document.getElementById('security-message').innerText = '密保验证成功！请输入新密码';
+                        securityResetState = 'setPassword';
+                    } else {
+                        document.getElementById('security-message').className = 'security-message error';
+                        document.getElementById('security-message').innerText = '密保日期错误';
+                    }
+                } catch (e) {
+                    document.getElementById('security-message').className = 'security-message error';
+                    document.getElementById('security-message').innerText = '验证失败';
+                }
+                
+            } else if (securityResetState === 'setPassword') {
+                const newPassword = document.getElementById('new-password-input').value;
+                const confirmPassword = document.getElementById('confirm-password-input').value;
+                
+                if (!newPassword || !confirmPassword) {
+                    document.getElementById('security-message').className = 'security-message error';
+                    document.getElementById('security-message').innerText = '请输入新密码';
+                    return;
+                }
+                
+                if (newPassword !== confirmPassword) {
+                    document.getElementById('security-message').className = 'security-message error';
+                    document.getElementById('security-message').innerText = '两次输入的密码不一致';
+                    return;
+                }
+                
+                if (newPassword.length < 4) {
+                    document.getElementById('security-message').className = 'security-message error';
+                    document.getElementById('security-message').innerText = '密码至少需要4个字符';
+                    return;
+                }
+                
+                try {
+                    const hasPermission = await verifyPermission(fileHandle);
+                    if (!hasPermission) {
+                        document.getElementById('security-message').className = 'security-message error';
+                        document.getElementById('security-message').innerText = '没有文件访问权限';
+                        return;
+                    }
+                    
+                    const file = await fileHandle.getFile();
+                    const content = await file.text();
+                    const pkg = JSON.parse(content);
+                    
+                    // 读取现有数据
+                    let existingData = [];
+                    let existingFolders = pkg.folders || [];
+                    let existingGroups = pkg.groups || [];
+                    let existingSecurityDate = pkg.sd || securityDateInput;
+                    
+                    if (pkg.v === "3.0") {
+                        // 对于v3.0文件，我们需要尝试解密现有数据
+                        if (pkg.payload && pkg.dataKey) {
+                            // 使用密保日期生成恢复密钥来解密数据密钥
+                            // 这里我们使用一个简单的恢复机制：用密保日期生成一个恢复密钥
+                            const recoveryKey = generateRecoveryKey(existingSecurityDate);
+                            
+                            try {
+                                // 尝试用恢复密钥解密数据密钥
+                                const keyBytes = CryptoJS.AES.decrypt(pkg.dataKey, recoveryKey);
+                                const recoveredDataKey = keyBytes.toString(CryptoJS.enc.Utf8);
+                                
+                                if (recoveredDataKey) {
+                                    // 成功恢复数据密钥，解密数据
+                                    const dataBytes = CryptoJS.AES.decrypt(pkg.payload, recoveredDataKey);
+                                    const decryptedStr = dataBytes.toString(CryptoJS.enc.Utf8);
+                                    existingData = JSON.parse(decryptedStr);
+                                    
+                                    // 用新密码加密数据密钥
+                                    const encryptedDataKey = CryptoJS.AES.encrypt(recoveredDataKey, newPassword).toString();
+                                    
+                                    // 用恢复的数据密钥重新加密数据
+                                    const ciphertext = CryptoJS.AES.encrypt(JSON.stringify(existingData), recoveredDataKey).toString();
+                                    
+                                    const dataToSave = { 
+                                        v: "3.0", 
+                                        payload: ciphertext, 
+                                        dataKey: encryptedDataKey,
+                                        folders: existingFolders, 
+                                        groups: existingGroups, 
+                                        sd: existingSecurityDate,
+                                        requiresPassword: true,
+                                        isNewFile: false
+                                    };
+                                    
+                                    const writable = await fileHandle.createWritable();
+                                    await writable.write(JSON.stringify(dataToSave));
+                                    await writable.close();
+                                    
+                                    document.getElementById('security-message').className = 'security-message success';
+                                    document.getElementById('security-message').innerText = '密码重置成功！所有数据已保留，请使用新密码登录';
+                                    document.getElementById('security-action-btn').innerText = '完成';
+                                    securityResetState = 'complete';
+                                    
+                                    setTimeout(() => {
+                                        hideSecurityResetModal();
+                                        location.reload();
+                                    }, 1500);
+                                    return;
+                                }
+                            } catch (e) {
+                                // 恢复失败，继续尝试其他方法
+                                console.log("恢复密钥解密失败:", e);
+                            }
+                            
+                            // 如果恢复失败，尝试用默认密码解密（对于新创建的文件）
+                            try {
+                                const keyBytes = CryptoJS.AES.decrypt(pkg.dataKey, "default_reset_key");
+                                const recoveredDataKey = keyBytes.toString(CryptoJS.enc.Utf8);
+                                
+                                if (recoveredDataKey) {
+                                    // 成功恢复数据密钥，解密数据
+                                    const dataBytes = CryptoJS.AES.decrypt(pkg.payload, recoveredDataKey);
+                                    const decryptedStr = dataBytes.toString(CryptoJS.enc.Utf8);
+                                    existingData = JSON.parse(decryptedStr);
+                                    
+                                    // 用新密码加密数据密钥
+                                    const encryptedDataKey = CryptoJS.AES.encrypt(recoveredDataKey, newPassword).toString();
+                                    
+                                    // 用恢复的数据密钥重新加密数据
+                                    const ciphertext = CryptoJS.AES.encrypt(JSON.stringify(existingData), recoveredDataKey).toString();
+                                    
+                                    const dataToSave = { 
+                                        v: "3.0", 
+                                        payload: ciphertext, 
+                                        dataKey: encryptedDataKey,
+                                        folders: existingFolders, 
+                                        groups: existingGroups, 
+                                        sd: existingSecurityDate,
+                                        requiresPassword: true,
+                                        isNewFile: false
+                                    };
+                                    
+                                    const writable = await fileHandle.createWritable();
+                                    await writable.write(JSON.stringify(dataToSave));
+                                    await writable.close();
+                                    
+                                    document.getElementById('security-message').className = 'security-message success';
+                                    document.getElementById('security-message').innerText = '密码重置成功！所有数据已保留，请使用新密码登录';
+                                    document.getElementById('security-action-btn').innerText = '完成';
+                                    securityResetState = 'complete';
+                                    
+                                    setTimeout(() => {
+                                        hideSecurityResetModal();
+                                        location.reload();
+                                    }, 1500);
+                                    return;
+                                }
+                            } catch (e2) {
+                                // 默认密码也失败
+                                console.log("默认密码解密失败:", e2);
+                            }
+                        }
+                        
+                        // 如果以上方法都失败，询问用户是否创建新文件
+                        if (confirm("无法恢复现有数据。重置密码将创建新文件，但会保留分组结构。是否继续？")) {
+                            const newDataKey = generateDataKey();
+                            const ciphertext = CryptoJS.AES.encrypt(JSON.stringify([]), newDataKey).toString();
+                            const encryptedDataKey = CryptoJS.AES.encrypt(newDataKey, newPassword).toString();
+                            
+                            const dataToSave = { 
+                                v: "3.0", 
+                                payload: ciphertext, 
+                                dataKey: encryptedDataKey,
+                                folders: [], 
+                                groups: existingGroups, 
+                                sd: existingSecurityDate,
+                                requiresPassword: true,
+                                isNewFile: false
+                            };
+                            
+                            const writable = await fileHandle.createWritable();
+                            await writable.write(JSON.stringify(dataToSave));
+                            await writable.close();
+                            
+                            document.getElementById('security-message').className = 'security-message success';
+                            document.getElementById('security-message').innerText = '密码重置成功！已创建新文件，请使用新密码登录';
+                            document.getElementById('security-action-btn').innerText = '完成';
+                            securityResetState = 'complete';
+                            
+                            setTimeout(() => {
+                                hideSecurityResetModal();
+                                location.reload();
+                            }, 1500);
+                        }
+                    } else {
+                        // 旧版本文件处理
+                        if (confirm("警告：旧版本文件重置密码将丢失所有数据！是否继续？")) {
+                            const newDataKey = generateDataKey();
+                            const ciphertext = CryptoJS.AES.encrypt(JSON.stringify([]), newDataKey).toString();
+                            const encryptedDataKey = CryptoJS.AES.encrypt(newDataKey, newPassword).toString();
+                            
+                            const dataToSave = { 
+                                v: "3.0", 
+                                payload: ciphertext, 
+                                dataKey: encryptedDataKey,
+                                folders: [], 
+                                groups: groups, 
+                                sd: securityDateInput,
+                                requiresPassword: true,
+                                isNewFile: false
+                            };
+                            
+                            const writable = await fileHandle.createWritable();
+                            await writable.write(JSON.stringify(dataToSave));
+                            await writable.close();
+                            
+                            document.getElementById('security-message').className = 'security-message success';
+                            document.getElementById('security-message').innerText = '密码重置成功！旧数据已清除，请使用新密码登录';
+                            document.getElementById('security-action-btn').innerText = '完成';
+                            securityResetState = 'complete';
+                            
+                            setTimeout(() => {
+                                hideSecurityResetModal();
+                                location.reload();
+                            }, 1500);
+                        }
+                    }
+                    
+                } catch (e) {
+                    console.error(e);
+                    document.getElementById('security-message').className = 'security-message error';
+                    document.getElementById('security-message').innerText = '重置失败：' + e.message;
+                }
+                
+            } else if (securityResetState === 'complete') {
+                hideSecurityResetModal();
+            }
+        }
+
+        // 生成恢复密钥（基于密保日期）
+        function generateRecoveryKey(securityDate) {
+            // 使用密保日期生成一个固定的恢复密钥
+            return CryptoJS.SHA256(securityDate + "_recovery_salt").toString();
+        }
+
+        // 密保设置功能
+        function showSecuritySettingsModal() {
+            if (!masterPwd) {
+                showToast("请先解锁系统");
+                return;
+            }
+            
+            document.getElementById('current-security-date').innerText = securityDate || '未设置';
+            document.getElementById('settings-message').className = 'security-message info';
+            document.getElementById('settings-message').innerText = `当前密保日期：${securityDate || '未设置'}`;
+            document.getElementById('current-password-input').value = '';
+            document.getElementById('new-security-date-input').value = securityDate || '';
+            document.getElementById('security-settings-modal').classList.remove('hidden');
+        }
+        
+        function hideSecuritySettingsModal() {
+            document.getElementById('security-settings-modal').classList.add('hidden');
+        }
+        
+        async function updateSecurityDate() {
+            const currentPassword = document.getElementById('current-password-input').value;
+            const newSecurityDate = document.getElementById('new-security-date-input').value;
+            
+            if (!currentPassword) {
+                document.getElementById('settings-message').className = 'security-message error';
+                document.getElementById('settings-message').innerText = '请输入当前密码';
+                return;
+            }
+            
+            if (currentPassword !== masterPwd) {
+                document.getElementById('settings-message').className = 'security-message error';
+                document.getElementById('settings-message').innerText = '当前密码错误';
+                return;
+            }
+            
+            if (!newSecurityDate) {
+                document.getElementById('settings-message').className = 'security-message error';
+                document.getElementById('settings-message').innerText = '请输入新的密保日期';
+                return;
+            }
+            
+            try {
+                // 更新密保日期
+                securityDate = newSecurityDate;
+                
+                // 保存到文件
+                await syncFile();
+                
+                document.getElementById('settings-message').className = 'security-message success';
+                document.getElementById('settings-message').innerText = '密保日期更新成功！';
+                document.getElementById('current-security-date').innerText = securityDate;
+                
+                setTimeout(() => {
+                    hideSecuritySettingsModal();
+                }, 1000);
+                
+            } catch (e) {
+                document.getElementById('settings-message').className = 'security-message error';
+                document.getElementById('settings-message').innerText = '更新失败';
+            }
+        }
+
+        // 其他函数保持不变...
+        function getNoteSelectorContainerHTML(dateValue = "", selectedNote = "") {
+            const titles = decryptedData.filter(d => d.type === 'note' && d.folderId === activeFolderId).map(d => d.title);
+            let options = `<option value="">未选择笔记</option>`;
+            titles.forEach(t => options += `<option value="${t}" ${t === selectedNote ? 'selected' : ''}>${t}</option>`);
+            
+            return `
+                <div class="note-link-container">
+                    <input type="date" value="${dateValue}" class="cell-date-picker" max="9999-12-31">
+                    <i data-lucide="link" class="note-icon-overlay w-2.5 h-2.5"></i>
+                    <select class="cell-note-selector" title="关联到笔记主题">
+                        ${options}
+                    </select>
+                </div>
+            `;
+        }
+
+        function autoSyncTableToNotes() {
+            const tables = decryptedData.filter(d => d.type === 'table');
+            const notes = decryptedData.filter(d => d.type === 'note');
+            notes.forEach(n => { if (n.subLevels) n.subLevels.forEach(s => s.testMetas = (s.testMetas || []).filter(m => !m.isAuto)); });
+            
+            tables.forEach(table => {
+                const tableEl = document.getElementById(`table-${table.id}`);
+                if (!tableEl) return;
+                const headers = Array.from(tableEl.querySelectorAll('thead th')).map(th => th.innerText.trim());
+                const rows = Array.from(tableEl.querySelectorAll('tbody tr'));
+                for (let i = 0; i < rows.length; i += 2) {
+                    const dataRow = rows[i]; const dateRow = rows[i + 1]; if (!dateRow) continue;
+                    const testDate = dataRow.cells[0].querySelector('input')?.value;
+                    if (!testDate) continue;
+                    for (let j = 1; j < headers.length; j++) {
+                        const sampleId = headers[j];
+                        const logDate = dateRow.cells[j].querySelector('.cell-date-picker')?.value;
+                        const targetTitle = dateRow.cells[j].querySelector('.cell-note-selector')?.value;
+                        if (logDate && targetTitle && sampleId) {
+                            notes.filter(n => n.folderId === table.folderId && n.title === targetTitle).forEach(n => {
+                                if (n.subLevels) {
+                                    const targetSub = n.subLevels.find(s => s.date === logDate);
+                                    if (targetSub) {
+                                        if (!targetSub.testMetas) targetSub.testMetas = [];
+                                        targetSub.testMetas.push({ date: testDate, project: table.title, sampleId, isAuto: true });
+                                    }
+                                }
+                            });
+                        }
+                    }
+                }
+            });
+        }
+
+        function renderDetails() {
+            const container = document.getElementById('detail-list');
+            if (!activeFolderId) { container.innerHTML = '<div class="h-full flex items-center justify-center text-slate-300 font-bold uppercase tracking-widest">请选择一个项目以查看记录</div>'; return; }
+            const filtered = decryptedData.filter(d => d.folderId === activeFolderId);
+            
+            const createSection = (title, items, isT) => `
+                <div class="mb-6">
+                    <div class="flex items-center gap-2 mb-2"><span class="px-2 py-0.5 rounded border text-[10px] font-black ${isT?'bg-teal-50 text-teal-600 border-teal-200':'bg-indigo-50 text-indigo-600 border-indigo-200'}">${title}</span></div>
+                    <div>
+                        ${items.map(d => `
+                            <div class="detail-row ${isT?'type-table':'type-note'} ${expandedIds.has(d.id)?'expanded':''} ${focusedId === d.id ? 'status-focused' : ''}" id="detail-${d.id}">
+                                <div class="detail-header cursor-pointer" onclick="toggleDetail('${d.id}')">
+                                    <i data-lucide="chevron-right" class="w-4 h-4 ml-2"></i>
+                                    <input type="text" value="${d.title}" oninput="updateDetailField('${d.id}', 'title', this.value)" onblur="saveToLocal(); renderDetails();" class="ml-2 font-bold bg-transparent outline-none w-56 text-[14px]" onclick="event.stopPropagation()">
+                                    <div class="flex-1"></div>
+                                    <button onclick="event.stopPropagation();deleteDetail('${d.id}')" class="ml-2 text-slate-200 hover:text-red-400"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                                </div>
+                                <div class="detail-body">
+                                    ${!isT ? renderNoteHTML(d) : renderTableHTML(d)}
+                                </div>
+                            </div>`).join('')}
+                    </div>
+                </div>`;
+            container.innerHTML = createSection("数据记录表", filtered.filter(x=>x.type==='table'), true) + createSection("实验笔记", filtered.filter(x=>x.type!=='table'), false);
+            lucide.createIcons();
+            bindDynamicEvents();
+        }
+
+        function renderNoteHTML(d) {
+            return `<div class="p-3">
+                <div class="flex justify-between items-center mb-2 px-1">
+                    <div class="flex items-center gap-2"><span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">实验记录</span><button onclick="addSubLevel('${d.id}')" class="btn-op">增加记录</button></div>
+                    <div class="flex items-center gap-1"><button onclick="toggleAllSubItems('${d.id}', true)" class="arrow-btn text-indigo-500">»</button><button onclick="toggleAllSubItems('${d.id}', false)" class="arrow-btn text-slate-400">«</button></div>
+                </div>
+                <div class="sub-section-container">
+                    ${(d.subLevels || []).map(sub => `
+                        <div class="sub-item ${sub.expanded ? 'sub-expanded' : ''}" id="sub-item-${sub.id}">
+                            <div class="sub-header-edit" onclick="toggleSubItem('${d.id}', '${sub.id}')">
+                                <i data-lucide="chevron-right" class="sub-icon w-3.5 h-3.5 text-slate-400"></i>
+                                <input type="date" value="${sub.date}" oninput="updateSubField('${d.id}', '${sub.id}', 'date', this.value)" onclick="event.stopPropagation()" class="note-header-date border-none outline-none" max="9999-12-31">
+                                <div contenteditable="true" onblur="updateSubField('${d.id}', '${sub.id}', 'remark', this.innerText)" onclick="event.stopPropagation()" class="flex-1 px-2 text-slate-700 font-bold truncate outline-none text-[13px]">${sub.remark || '阶段备注...'}</div>
+                                <button onclick="event.stopPropagation();deleteSubLevel('${d.id}', '${sub.id}')" class="text-slate-300 hover:text-red-400 px-1"><i data-lucide="x" class="w-3.5 h-3.5"></i></button>
+                            </div>
+                            <div class="sub-content-area flex-container">
+                                <div class="editor-side"><textarea onblur="updateSubField('${d.id}', '${sub.id}', 'observation', this.value)" placeholder="记录实验观察...">${sub.observation || ''}</textarea></div>
+                                <div class="tracker-side">
+                                    <div class="text-[9px] font-black text-slate-400 mb-1 px-1 tracking-widest uppercase">此日期关联数据</div>
+                                    <div class="flex flex-col gap-1.5">
+                                        ${(sub.testMetas || []).map(m => `
+                                            <div class="tracer-item">
+                                                <span class="text-[9px] font-mono text-slate-400">${m.date.split('-').slice(1).join('/')}</span>
+                                                <span class="font-bold flex-1 truncate text-slate-600 text-[11px]">${m.project}</span>
+                                                <span class="bg-slate-50 px-1 rounded font-mono text-[9px]">#${m.sampleId}</span>
+                                                <i data-lucide="crosshair" class="w-3.5 h-3.5 text-indigo-400 cursor-pointer" onclick="locateInTable('${m.date}', '${m.project}', '${m.sampleId}')"></i>
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>`).join('')}
+                </div>
+            </div>`;
+        }
+
+        function renderTableHTML(d) {
+            return `<div class="p-3">
+                <div class="flex gap-3 mb-3"><button onclick="modTable('${d.id}', 'row')" class="btn-op">添加测试行</button><button onclick="modTable('${d.id}', 'col')" class="btn-op">增加样品列</button></div>
+                <div class="overflow-x-auto"><table class="data-table" id="table-${d.id}">${d.htmlTable || ''}</table></div>
+            </div>`;
+        }
+
+        function toggleDetail(id) { focusedId = null; if(expandedIds.has(id)) expandedIds.delete(id); else expandedIds.add(id); renderDetails(); }
+        
+        function createNewItem(type) { 
+            if(!activeFolderId) return; 
+            const newItem = { 
+                id: (type === 'table' ? 't_' : 'n_') + Date.now(), 
+                folderId: activeFolderId, 
+                type: type, 
+                title: type === 'table' ? '新数据表' : '新实验笔记', 
+                subLevels: type === 'note' ? [] : null, 
+                htmlTable: type === 'table' ? `<thead><tr><th>测试日期</th><th>样片1</th></tr></thead><tbody><tr><td><input type="date" class="cell-date-picker" max="9999-12-31"></td><td><div contenteditable="true" class="outline-none min-h-[1.5em]"></div></td></tr><tr class="row-test-date"><td>归属笔记</td><td>${getNoteSelectorContainerHTML()}</td></tr></tbody>` : null 
+            }; 
+            decryptedData.unshift(newItem); 
+            expandedIds.add(newItem.id); 
+            saveToLocal(); 
+            renderDetails(); 
+        }
+
+        function addSubLevel(noteId) { 
+            const note = decryptedData.find(x => x.id === noteId); 
+            if (note) { 
+                note.subLevels.unshift({ id: 'sub_' + Date.now(), date: new Date().toISOString().split('T')[0], remark: '', observation: '', testMetas: [], expanded: true }); 
+                autoSyncTableToNotes(); 
+                saveToLocal(); 
+                renderDetails(); 
+            } 
+        }
+
+        function updateSubField(nid, sid, f, v) { 
+            const n = decryptedData.find(x => x.id === nid); 
+            const s = n.subLevels.find(x => x.id === sid); 
+            if(s[f] === v) return;
+            s[f] = v; 
+            saveToLocal(); 
+            if (f === 'date') {
+                autoSyncTableToNotes();
+                renderDetails();
+            }
+        }
+
+        function toggleSubItem(nid, sid) { const n = decryptedData.find(x => x.id === nid); const s = n.subLevels.find(x => x.id === sid); s.expanded = !s.expanded; renderDetails(); }
+        function toggleAllSubItems(nid, s) { const n = decryptedData.find(x => x.id === nid); n.subLevels.forEach(sub => sub.expanded = s); renderDetails(); }
+        function deleteSubLevel(nid, sid) { if(confirm("删除此记录？")) { const n = decryptedData.find(x => x.id === nid); n.subLevels = n.subLevels.filter(s => s.id !== sid); saveToLocal(); renderDetails(); } }
+        function updateDetailField(id, f, v) { const d = decryptedData.find(x => x.id === id); if (d) d[f] = v; }
+        function deleteDetail(id) { if(confirm("确定删除此项？数据将永久丢失。")) { decryptedData = decryptedData.filter(x=>x.id!==id); saveToLocal(); renderDetails(); } }
+        function showToast(m) { const t = document.getElementById('toast'); t.innerText = m; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 3000); }
+
+        function modTable(id, type) {
+            const table = document.getElementById(`table-${id}`), tbody = table.querySelector('tbody'), thead = table.querySelector('thead tr'), today = new Date().toISOString().split('T')[0];
+            if (type === 'row') {
+                const r1 = tbody.insertRow();
+                for (let i = 0; i < thead.cells.length; i++) r1.insertCell().innerHTML = i===0 ? `<input type="date" value="${today}" class="cell-date-picker" max="9999-12-31">` : `<div contenteditable="true" class="outline-none min-h-[1.5em]"></div>`;
+                const r2 = tbody.insertRow(); r2.className = "row-test-date";
+                for (let i = 0; i < thead.cells.length; i++) r2.insertCell().innerHTML = i===0 ? "归属笔记" : getNoteSelectorContainerHTML();
+            } else {
+                const th = document.createElement('th'); th.innerHTML = `<div contenteditable="true" class="outline-none">${thead.cells.length}</div>`; thead.appendChild(th);
+                Array.from(tbody.rows).forEach(r => {
+                    const cell = r.insertCell();
+                    if (r.className === "row-test-date") cell.innerHTML = getNoteSelectorContainerHTML();
+                    else cell.innerHTML = `<div contenteditable="true" class="outline-none min-h-[1.5em]"></div>`;
+                });
+            }
+            saveTableState(id); renderDetails();
+        }
+
+        function saveTableState(id) {
+            const d = decryptedData.find(x => x.id === id); const t = document.getElementById(`table-${id}`);
+            if(d && t) { 
+                t.querySelectorAll('input').forEach(i => i.setAttribute('value', i.value));
+                t.querySelectorAll('select').forEach(s => { Array.from(s.options).forEach(opt => { if (opt.value === s.value) opt.setAttribute('selected', 'selected'); else opt.removeAttribute('selected'); }); });
+                d.htmlTable = t.innerHTML; saveToLocal(); 
+            }
+        }
+
+        function bindDynamicEvents() {
+            document.querySelectorAll('.cell-date-picker, .cell-note-selector, .note-header-date').forEach(el => {
+                el.addEventListener('blur', (e) => {
+                    const table = e.target.closest('table');
+                    if (table) {
+                        saveTableState(table.id.replace('table-', ''));
+                        autoSyncTableToNotes();
+                    }
+                });
+
+                el.addEventListener('change', (e) => {
+                    if (e.target.tagName === 'SELECT') {
+                        const table = e.target.closest('table');
+                        if (table) {
+                            saveTableState(table.id.replace('table-', ''));
+                            autoSyncTableToNotes();
+                            renderDetails();
+                        }
+                    }
+                });
+
+                if (el.classList.contains('cell-date-picker')) {
+                    el.addEventListener('dblclick', (e) => {
+                        const dateValue = e.target.value; const cell = e.target.closest('td'); const titleValue = cell.querySelector('.cell-note-selector')?.value;
+                        if (dateValue && titleValue) locateInNote(dateValue, titleValue);
+                    });
+                }
+            });
+
+            document.querySelectorAll('.data-table [contenteditable]').forEach(el => {
+                el.addEventListener('blur', () => {
+                    const table = el.closest('table');
+                    if (table) saveTableState(table.id.replace('table-', ''));
+                });
+            });
+        }
+
+        function locateInNote(date, title) {
+            const targetNote = decryptedData.find(d => d.type === 'note' && d.folderId === activeFolderId && d.title === title);
+            if (!targetNote) { showToast("未找到对应笔记"); return; }
+            const sub = targetNote.subLevels?.find(s => s.date === date);
+            if (!sub) { showToast("笔记中无此日期"); return; }
+            expandedIds.add(targetNote.id); sub.expanded = true; renderDetails();
+            setTimeout(() => { const el = document.getElementById(`sub-item-${sub.id}`); if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.classList.add('sub-highlight'); setTimeout(() => el.classList.remove('sub-highlight'), 2000); } }, 300);
+        }
+
+        function locateInTable(date, projectName, sampleId) {
+            const target = decryptedData.find(d => d.type === 'table' && d.folderId === activeFolderId && d.title.trim() === projectName.trim());
+            if (!target) return;
+            expandedIds.add(target.id); focusedId = target.id; renderDetails();
+            setTimeout(() => {
+                const tableEl = document.getElementById(`table-${target.id}`);
+                const colIdx = Array.from(tableEl.querySelectorAll('thead th')).findIndex(th => th.innerText.trim() === sampleId.toString().trim());
+                const targetRow = Array.from(tableEl.querySelectorAll('tbody tr')).find(tr => tr.cells[0].querySelector('input')?.value === date);
+                if (colIdx !== -1 && targetRow) { const cell = targetRow.cells[colIdx]; cell.scrollIntoView({ behavior: 'smooth', block: 'center' }); cell.style.backgroundColor = '#fef3c7'; setTimeout(() => cell.style.backgroundColor = 'transparent', 2000); }
+            }, 300);
+        }
+
+        function handleFolderClick(id) { if (activeFolderId === id) return; activeFolderId = id; focusedId = null; expandedIds.clear(); renderFolders(); renderDetails(); document.getElementById('current-folder-path').innerText = folders.find(f => f.id === id)?.name || "存储区"; }
+        function addGroup() { const n = prompt("分组名:"); if(n) { groups.push({id:'g_'+Date.now(), name:n.toUpperCase(), expanded:true}); saveToLocal(); renderFolders(); } }
+        function addFolderInGroup(gid) { const n = prompt("项目名:"); if(n) { folders.push({id:'f_'+Date.now(), name:n, groupId:gid}); saveToLocal(); renderFolders(); } }
+        function toggleGroupExpanded(gid) { const g = groups.find(x=>x.id===gid); g.expanded = !g.expanded; saveToLocal(); renderFolders(); }
+        
+        function handleGroupDblClick(gid, element) { event.stopPropagation(); const g = groups.find(x=>x.id===gid); if(g) { g.expanded = true; renderFolders(); const el = document.querySelector(`[data-gid="${gid}"]`); enableEditing(el); } }
+        function enableEditing(el) { el.contentEditable = "true"; el.focus(); document.execCommand('selectAll', false, null); }
+        function saveGroupName(gid, element) { element.contentEditable = "false"; const g = groups.find(x=>x.id===gid); if(g) { const n = element.innerText.trim(); if(n) { g.name = n.toUpperCase(); saveToLocal(); } else { element.innerText = g.name; } } }
+        function saveFolderName(fid, element) { element.contentEditable = "false"; const f = folders.find(x=>x.id===fid); if(f) { const n = element.innerText.trim(); if(n) { f.name = n; saveToLocal(); } else { element.innerText = f.name; } } }
+
+        function deleteGroup(gid) { if(confirm("删除分组及旗下所有数据？")) { folders = folders.filter(f=>f.groupId!==gid); groups = groups.filter(g=>g.id!==gid); saveToLocal(); renderFolders(); renderDetails(); } }
+        function deleteFolder(fid) { if(confirm("删除项目及所有记录？")) { folders = folders.filter(f=>f.id!==fid); decryptedData = decryptedData.filter(d=>d.folderId!==fid); saveToLocal(); renderFolders(); renderDetails(); } }
+
+        function renderFolders() {
+            document.getElementById('folder-list').innerHTML = groups.map(g => `
+                <div class="mb-4 group-container">
+                    <div class="flex justify-between items-center font-black text-slate-400 mb-2 sidebar-group-title">
+                        <div class="flex items-center flex-1 overflow-hidden" onclick="toggleGroupExpanded('${g.id}')">
+                            <div class="icon-btn-trigger"><i data-lucide="${g.expanded?'chevron-down':'chevron-right'}" class="w-4 h-4"></i></div>
+                            <span class="editable-group-name flex-1 truncate ml-1" data-gid="${g.id}" ondblclick="handleGroupDblClick('${g.id}', this)" onblur="saveGroupName('${g.id}', this)" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}">${g.name}</span>
+                        </div>
+                        <div class="group-ops opacity-0 flex">
+                            <button onclick="event.stopPropagation();addFolderInGroup('${g.id}')" class="px-1 text-slate-300 hover:text-indigo-500">+</button>
+                            <button onclick="event.stopPropagation();deleteGroup('${g.id}')" class="px-1 text-slate-300 hover:text-red-500"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
+                        </div>
+                    </div>
+                    <div class="ml-2 border-l border-slate-100" style="display:${g.expanded?'block':'none'}">
+                        ${folders.filter(f=>f.groupId===g.id).map(f=>`
+                            <div onclick="handleFolderClick('${f.id}')" class="folder-item px-3 py-2 cursor-pointer transition-all flex justify-between items-center ${activeFolderId===f.id?'text-indigo-600 font-bold bg-indigo-50 border-l-2 border-indigo-500 -ml-[1px]':'text-slate-500 hover:bg-slate-50'}">
+                                <span class="editable-folder-name flex-1 truncate" ondblclick="event.stopPropagation();enableEditing(this)" onblur="saveFolderName('${f.id}', this)" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}">${f.name}</span>
+                                <button onclick="event.stopPropagation();deleteFolder('${f.id}')" class="folder-ops opacity-0 text-slate-300 hover:text-red-500 ml-1"><i data-lucide="x" class="w-4 h-4"></i></button>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>`).join('');
+            lucide.createIcons();
+        }
+    </script>
+</body>
+</html>
